@@ -56,11 +56,13 @@ func ParseHTTPRequest(conn net.Conn) (*HTTPRequest, error) {
 	// body
 	body := ""
 	bodyLength, ok := headers["Content-Length"];
-	length, err := strconv.Atoi(bodyLength)
-	if err != nil {
-		return nil, fmt.Errorf("invalid Content-Length header: %v", err)
-	}
+	
+
 	if ok {
+		length, err := strconv.Atoi(bodyLength)
+		if( err != nil) {
+			return nil, fmt.Errorf("invalid Content-Length header: %v", err)
+		}
 		buf := make([]byte, length)
 		_, err = io.ReadFull(reader, buf)
 		if err != nil {
