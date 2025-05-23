@@ -9,11 +9,17 @@ import (
 )
 
 func main() {
+	http.RegisterRoute("GET", "/hello", func(params map[string]string) {
+		fmt.Println("GET /hello handler called")
+	})
+
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8080"
 	}
 	address := ":" + port
+
+	
 	
 	listener, err := net.Listen("tcp", address)
 	if err != nil {
