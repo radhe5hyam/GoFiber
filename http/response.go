@@ -48,7 +48,7 @@ func (w *HTTPResponse) Write(data []byte) (int, error) {
 func (w *HTTPResponse) Flush() error {
 	bodyStr := w.body.String()
 
-	w.headers["Content-length"] = strconv.Itoa(len(bodyStr))
+	w.headers["Content-Length"] = strconv.Itoa(len(bodyStr))
 	if _, ok := w.headers["Content-Type"]; !ok {
 		w.headers["Content-Type"] = "text/plain"
 	}
