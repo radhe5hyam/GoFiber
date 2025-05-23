@@ -10,12 +10,17 @@ func HandleConnection(conn net.Conn) {
 
 	req, err := ParseHTTPRequest(conn)
 	if err != nil {
-		response := "HTTP/1.1 400 Bad Request\r\nContent-Type: text/plain\r\n\r\n" + err.Error()
-		conn.Write(([]byte(response)))
+		writer := ResponseWriter(conn)
+		writer.WriteHeader(400)
+		writer.body.WriteString("Bad Request: " + err.Error())
+		writer.Flush()
 		return
 	}
 	fmt.Println("Received request:", req.Method, req.Path, req.Body)
 
-	response := "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\n\r\nHello, World!"
-	conn.Write([]byte(response))
+	writer := ResponseWriter(conn)
+	writer.WriteHeader(200)
+	writer.Header("X-Custom-Header", "GoFiber")
+	writer.Write([]byte("It works! - GoFiber"))
+	writer.Flush()
 }
