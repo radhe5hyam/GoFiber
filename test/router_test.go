@@ -3,13 +3,18 @@ package test
 import (
 	"testing"
 
-	"github.com/radhe5hyam/GoFiber/http/router"
+	"github.com/radhe5hyam/GoFiber/http"
 )
 
-func Test_AddandFindSegment(t *testing.T) {
-	root := router.NewNode("/")
+type Context struct {
+	Params map[string]string
+}
 
-	dummy := func(params map[string]string) {}
+//
+func Test_AddandFindSegment(t *testing.T) {
+	root := http.NewNode("/")
+
+	dummy := func(ctx *http.Context) {}
 
 	root.AddSegment("GET", "/users", dummy)
 	root.AddSegment("GET", "/posts", dummy)
@@ -28,9 +33,9 @@ func Test_AddandFindSegment(t *testing.T) {
 		t.Error("Expected match for /users/42/posts")
 	}
 
-	root.AddSegment("GET", "/users/:id", func(params map[string]string) {
-		if params["id"] != "123" {
-			t.Errorf("Expected id=123, got %s", params["id"])
+	root.AddSegment("GET", "/users/:id", func(ctx *http.Context) {
+		if ctx.Params["id"] != "123" {
+			t.Errorf("Expected id=123, got %s", ctx.Params["id"])
 		}
 	})
 
@@ -38,41 +43,38 @@ func Test_AddandFindSegment(t *testing.T) {
 	if handler == nil {
 		t.Fatal("Expected handler match")
 	}
-	handler(params)
-
+	handler(&http.Context{Params: params})
 
 	getCalled := false
 	postCalled := false
 
-	root.AddSegment("GET", "/users/:id", func(params map[string]string) {
+	root.AddSegment("GET", "/users/:id", func(ctx *http.Context) {
 		getCalled = true
-		if params["id"] != "123" {
-			t.Errorf("Expected id=123, got %s", params["id"])
+		if ctx.Params["id"] != "123" {
+			t.Errorf("Expected id=123, got %s", ctx.Params["id"])
 		}
 	})
 	handler, params, found, allowed := root.FindSegment("GET", "/users/123")
 	if !found || !allowed || handler == nil {
 		t.Fatal("Expected GET handler for /users/123")
 	}
-	handler(params)
+	handler(&http.Context{Params: params})
 	if !getCalled {
 		t.Error("GET handler was not called")
 	}
 
-
-	root.AddSegment("POST", "/users/:id", func(params map[string]string) {
+	root.AddSegment("POST", "/users/:id", func(ctx *http.Context) {
 		postCalled = true
 	})
-	handler, _, found, allowed = root.FindSegment("POST", "/users/123")
+	handler, params, found, allowed = root.FindSegment("POST", "/users/123")
 	if !found || !allowed || handler == nil {
 		t.Fatal("Expected POST handler")
 	}
-	handler(nil)
+	handler(&http.Context{Params: params})
 	if !postCalled {
 		t.Error("POST handler was not called")
 	}
 
-	
 	handler, _, found, allowed = root.FindSegment("PUT", "/users/123")
 	if !found {
 		t.Error("Expected path to exist")

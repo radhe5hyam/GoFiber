@@ -33,7 +33,7 @@ func TestHTTPResponseWriter(t *testing.T) {
 	buffer := &bytes.Buffer{}
 	conn := &mockResponseConn{buffer: buffer}
 
-	writer := http.ResponseWriter(conn)
+	writer := http.NewResponseWriter(conn)
 	writer.Header("Content-Type", "text/plain")
 	writer.WriteHeader(200)
 	writer.Write([]byte("Hello, World!"))

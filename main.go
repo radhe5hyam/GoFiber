@@ -1,41 +1,27 @@
 package main
 
 import (
-	"fmt"
-	"net"
 	"os"
 
 	"github.com/radhe5hyam/GoFiber/http"
 )
 
 func main() {
-	http.RegisterRoute("GET", "/hello", func(params map[string]string) {
-		fmt.Println("GET /hello handler called")
-	})
-
+	router := http.NewRouter()
+	RegisterRoutes(router)
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8080"
 	}
-	address := ":" + port
-
-	
-	
-	listener, err := net.Listen("tcp", address)
-	if err != nil {
-		fmt.Println("Error setting up listener:", err)
-		os.Exit(1)
-	}
-	defer listener.Close()
-
-	fmt.Println("Server started on port " + port)
-
-	for {
-		conn, err := listener.Accept()
-		if err != nil {
-			fmt.Println("Error accepting connection:", err)
-			continue
-		}
-		go http.HandleConnection(conn)
-	}
+	http.Listen(port, router)
 }
+
+func RegisterRoutes(router *http.Router) {
+	router.Register("GET", "/", func(ctx *http.Context) {
+		ctx.Response.Header("Content-Type", "text/plain")
+		ctx.Response.WriteHeader(200)
+		ctx.Response.Write([]byte("It Works!"))
+		ctx.Response.Flush()
+	})
+}
+

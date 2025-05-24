@@ -1,4 +1,4 @@
-package router
+package http
 
 import "strings"
 
@@ -11,7 +11,7 @@ type Node struct {
 	handlers map[string]HandlerFunc
 }
 
-type HandlerFunc func(params map[string]string)
+type HandlerFunc func(ctx *Context)
 
 func NewNode(segment string) *Node {
 	return &Node{
@@ -78,4 +78,18 @@ func splitPath(path string) []string {
 		return []string{}
 	}
 	return strings.Split(path, "/")
+}
+
+type Router struct {
+	root *Node
+}
+
+func NewRouter() *Router {
+	return &Router{
+		root: NewNode(""),
+	}
+}
+
+func (r *Router) Register(method string, path string, handler HandlerFunc) {
+	r.root.AddSegment(method, path, handler)
 }

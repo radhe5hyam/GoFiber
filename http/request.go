@@ -2,82 +2,77 @@ package http
 
 import (
 	"bufio"
-	"fmt"
 	"io"
-	"net"
+	"net/url"
 	"strconv"
 	"strings"
 )
 
-type HTTPRequest struct {
+type Request struct {
 	Method  string
 	Path    string
 	Headers map[string]string
-	Body    string
+	Query   map[string]string
+	Body    []byte
 }
 
-func ParseHTTPRequest(conn net.Conn) (*HTTPRequest, error) {
-	reader := bufio.NewReader(conn)
+func ParseHTTPRequest(r io.Reader) (*Request, error) {
+	scanner := bufio.NewScanner(r)
+	req := &Request{
+		Headers: make(map[string]string),
+		Query:   make(map[string]string),
+	}
+
+	if !scanner.Scan() {
+		return nil, io.EOF
+	}
 
 	// requetst line
-	requestLine, err := reader.ReadString('\n')
+	parts := strings.Split(scanner.Text(), " ")
+	if len(parts) != 3 {
+		return nil, io.ErrUnexpectedEOF
+	}
+
+	req.Method = parts[0]
+	rawURL := parts[1]
+
+	parsedURL, err := url.Parse(rawURL)
 	if err != nil {
 		return nil, err
 	}
-	
-	requestLine  = strings.TrimSpace(requestLine)
-	parts := strings.Split(requestLine, " ")
-	if len(parts) < 3 {
-		return nil, fmt.Errorf("invalid request line: %s", requestLine)
+	req.Path = parsedURL.Path
+
+	// parse query parameters
+	for key, values := range parsedURL.Query() {
+		if len(values) > 0 {
+			req.Query[key] = values[0]
+		}
 	}
 
-	method := parts[0]
-	path := parts[1]
-
-
 	// headers
-	headers := make(map[string]string)
-	for {
-		line, err := reader.ReadString('\n')
-		if err != nil {
-			return nil, fmt.Errorf("error reading headers: %v", err)
-		}
-		if strings.TrimSpace(line) == "" {
+	for scanner.Scan() {
+		line := scanner.Text()
+		if line == "" {
 			break
 		}
 
-		line = strings.TrimSpace(line)
 		headerParts := strings.SplitN(line, ":", 2)
 		if len(headerParts) == 2 {
-			headers[headerParts[0]] = strings.TrimSpace(headerParts[1])
+			req.Headers[strings.ToLower(headerParts[0])] = strings.TrimSpace(headerParts[1])
 		}
 	}
 	
 	// body
-	body := ""
-	bodyLength, ok := headers["Content-Length"];
-	
-
-	if ok {
-		length, err := strconv.Atoi(bodyLength)
-		if( err != nil) {
-			return nil, fmt.Errorf("invalid Content-Length header: %v", err)
-		}
-		buf := make([]byte, length)
-		_, err = io.ReadFull(reader, buf)
-		if err != nil {
-			return nil, fmt.Errorf("error reading body: %v", err)
-		}
-		body = string(buf)
+	contentLength := 0
+	if cl, ok := req.Headers["content-length"]; ok {
+		contentLength, _ = strconv.Atoi(cl)
 	}
 
+	if contentLength <= 0 {
+		body := make([]byte, contentLength)
+		io.ReadFull(r, body)
+		req.Body = body
+	}
 
-
-
-	return &HTTPRequest{
-		Method:  method,
-		Path:    path,
-		Headers: headers,
-		Body:    body,
-	}, nil
+	return req, nil
 }

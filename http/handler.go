@@ -1,43 +1,61 @@
 package http
 
 import (
+	"bufio"
+	"fmt"
 	"net"
-
-	"github.com/radhe5hyam/GoFiber/http/router"
 )
 
-var routeRoot = router.NewNode("/")
-
-func RegisterRoute(method, path string, handler router.HandlerFunc) {
-	routeRoot.AddSegment(method, path, handler)
-}
-
-func HandleConnection(conn net.Conn) {
-	defer conn.Close()
-
-	req, err := ParseHTTPRequest(conn)
-	writer := ResponseWriter(conn)
-
+func Listen(port string, router *Router) {
+	address := ":" + port
+	listener, err := net.Listen("tcp", address)
 	if err != nil {
-		writer.WriteHeader(400)
-		writer.body.WriteString("Bad Request: " + err.Error())
-		writer.Flush()
+		fmt.Println("Error setting up listener:", err)
 		return
 	}
+	defer listener.Close()
 
-	handler, params, found, allowed := routeRoot.FindSegment(req.Method, req.Path)
+	fmt.Println("Server started on port " + port)
+
+	for {
+		conn, err := listener.Accept()
+		if err != nil {
+			fmt.Println("Error accepting connection:", err)
+			continue
+		}
+		go router.HandleConnection(conn)
+	}
+}
+
+func (r *Router)HandleConnection(conn net.Conn) {
+	defer conn.Close()
+
+	req, err := ParseHTTPRequest(bufio.NewReader(conn))
+	if err != nil {
+		fmt.Println("Error parsing request:", err)
+		return
+	}
+	writer := NewResponseWriter(conn)
+
+	handler, params, found, allowed := r.root.FindSegment(req.Method, req.Path)
+	ctx := &Context{
+		Request:  req,
+		Response: writer,
+		Params:   params,
+	}
+
 	switch {
 	case !found:
 		writer.WriteHeader(404)
-		writer.body.WriteString("Not Found")
+		writer.Write([]byte("Not Found"))
 	case !allowed:
 		writer.WriteHeader(405)
-		writer.body.WriteString("Method Not Allowed")
+		writer.Write([]byte("Method Not Allowed"))
 	case handler != nil:
-		handler(params)
+		handler(ctx)
 	default:
 		writer.WriteHeader(500)
-		writer.body.WriteString("Internal Server Error: No handler found")
+		writer.Write([]byte("Internal Server Error: No handler found"))
 	}
 	writer.Flush()
 }

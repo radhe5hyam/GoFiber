@@ -5,77 +5,69 @@ import (
 	"fmt"
 	"net"
 	"strconv"
-	"strings"
 )
 
 
-type HTTPResponse struct {
+type ResponseWriter struct {
 	conn net.Conn
+	writer *bufio.Writer
 	statusCode int
 	headers map[string]string
-	body strings.Builder
-	writer *bufio.Writer
-	wrote bool
+	body []byte
+	flushed bool
 }
 
 
-func ResponseWriter(conn net.Conn) *HTTPResponse{
-	return &HTTPResponse{
+func NewResponseWriter(conn net.Conn) *ResponseWriter{
+	return &ResponseWriter{
 		conn : conn,
 		writer: bufio.NewWriter(conn),
-		statusCode: 200,
 		headers: make(map[string]string),
 
 	}
 }
 
-func (w *HTTPResponse) WriteHeader(statusCode int) {
-	if w.wrote {
-		return
-	}
-	w.statusCode = statusCode
-	w.wrote = true
+func (rw *ResponseWriter) WriteHeader(statusCode int) {
+	rw.statusCode = statusCode
 }
 
-func (w *HTTPResponse) Header(key, value string) {
-	w.headers[key] = value
+func (rw *ResponseWriter) Header(key, value string) {
+	rw.headers[key] = value
 }
 
-func (w *HTTPResponse) Write(data []byte) (int, error) {
-	return w.body.Write(data)
+func (rw *ResponseWriter) Write(data []byte) {
+	rw.body = append(rw.body, data...)
 }
 
-func (w *HTTPResponse) Flush() error {
-	bodyStr := w.body.String()
+func (rw *ResponseWriter) Flush() error {
+	if rw.flushed {
+		return nil
+	}
+	rw.flushed = true
 
-	w.headers["Content-Length"] = strconv.Itoa(len(bodyStr))
-	if _, ok := w.headers["Content-Type"]; !ok {
-		w.headers["Content-Type"] = "text/plain"
+	if rw.statusCode == 0 {
+		rw.statusCode = 200
 	}
 
-	statusText := statusText(w.statusCode)
-	statusLine := fmt.Sprintf("HTTP/1.1 %d %s\r\n", w.statusCode, statusText)
+	
+	statusLine := fmt.Sprintf("HTTP/1.1 %d %s\r\n", rw.statusCode, statusText(rw.statusCode))
+	rw.writer.WriteString(statusLine)
 
-	if _, err := w.writer.WriteString((statusLine)); err != nil {
-		return err
+	if _, ok := rw.headers["Content-Length"]; !ok {
+		rw.headers["Content-Length"] = strconv.Itoa(len(rw.body))
+	}
+	if _, ok := rw.headers["Content-Type"]; !ok {
+		rw.headers["Content-Type"] = "text/plain"
 	}
 
-	for key, value := range w.headers {
-		headerLine := fmt.Sprintf(("%s: %s\r\n"), key,value)
-		if _, err := w.writer.WriteString(headerLine); err != nil {
-			return err
-		}
+	for key, value := range rw.headers {
+		rw.writer.WriteString(fmt.Sprintf(("%s: %s\r\n"), key,value))
 	}
 
-	if _, err := w.writer.WriteString("\r\n"); err != nil {
-		return err
-	}
+	rw.writer.WriteString("\r\n")
+	rw.writer.Write(rw.body)
 
-	if _, err := w.writer.WriteString(bodyStr); err != nil {
-		return err
-	}
-
-	return w.writer.Flush()
+	return rw.writer.Flush()
 }
 
 func statusText(statusCode int) string {
@@ -86,6 +78,8 @@ func statusText(statusCode int) string {
 		return "Bad Request"
 	case 404:
 		return "Not Found"
+	case 405:
+		return "Method Not Allowed"
 	case 500:
 		return "Internal Server Error"
 	default:
