@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"net/http"
 )
 
@@ -18,11 +19,20 @@ func SetupExampleRoutes(router *Router) {
 
 	router.AddRoute(http.MethodGet, "/user/info", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprint(w, `{"name": "Router", "type": "Trie"}`)
+		fmt.Fprint(w, `{"name": "Gemini Router", "type": "Trie"}`) // Corrected name
 	})
 
 	router.AddRoute(http.MethodPost, "/submit", func(w http.ResponseWriter, r *http.Request) {
+		bodyBytes, err := io.ReadAll(r.Body)
+		if err != nil {
+			http.Error(w, "Failed to read request body", http.StatusInternalServerError)
+			return
+		}
+		defer r.Body.Close()
+
+		// Echo the body back or process it
+		w.Header().Set("Content-Type", "text/plain")
 		w.WriteHeader(http.StatusCreated)
-		fmt.Fprint(w, "Data submission acknowledged by router!")
+		fmt.Fprintf(w, "Received your submission:\n%s", string(bodyBytes))
 	})
 }

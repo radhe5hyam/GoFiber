@@ -3,10 +3,12 @@ package main
 import (
 	"bytes"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -47,7 +49,7 @@ func (crw *connResponseWriter) WriteHeader(statusCode int) {
 	statusLine := fmt.Sprintf("HTTP/1.1 %d %s\r\n", crw.statusCode, http.StatusText(crw.statusCode))
 	crw.conn.Write([]byte(statusLine))
 
-	// Ensure a Content-Type is set if not already provided by the handler
+	// default Content-Type if not already provided by the handler
 	if crw.header.Get("Content-Type") == "" {
 		crw.header.Set("Content-Type", "text/plain; charset=utf-8")
 	}
@@ -136,6 +138,8 @@ func handleRequest(conn net.Conn, router *Router) {
 	}
 
 	requestHeaderBytes := fullData[:headerEndIndex]
+	// Potentially part of the body is already in fullData after the headers
+	requestBodyBytesSoFar := fullData[headerEndIndex+4:]
 
 	headerLines := bytes.Split(requestHeaderBytes, []byte("\r\n"))
 	if len(headerLines) < 1 {
@@ -171,10 +175,12 @@ func handleRequest(conn net.Conn, router *Router) {
 	req := &http.Request{
 		Method: method,
 		URL:    parsedURL,
-		Proto:  protocol,
-		Header: make(http.Header),
+		Proto:      protocol,
+		Header:     make(http.Header),
 		RequestURI: rawPath,
+		Body:       http.NoBody, // Default to no body
 	}
+
 
 	for _, line := range headerLines[1:] {
 		if len(line) == 0 {
@@ -188,6 +194,33 @@ func handleRequest(conn net.Conn, router *Router) {
 			if strings.ToLower(headerName) == "host" {
 				req.Host = headerValue
 			}
+		}
+	}
+
+	// --- Request Body Parsing ---
+	contentLengthStr := req.Header.Get("Content-Length")
+	if contentLengthStr != "" {
+		contentLength, err := strconv.ParseInt(contentLengthStr, 10, 64)
+		if err == nil && contentLength > 0 {
+			
+			body := make([]byte, contentLength)
+			copiedBytes := copy(body, requestBodyBytesSoFar)
+
+			if int64(copiedBytes) < contentLength {
+				bytesToRead := int(contentLength) - copiedBytes
+
+				remainingBodyBuffer := make([]byte, bytesToRead)
+				n, readErr := io.ReadFull(conn, remainingBodyBuffer)
+				if readErr != nil && readErr != io.EOF && readErr != io.ErrUnexpectedEOF {
+					fmt.Println("Error reading remaining request body:", readErr, "read", n, "expected", bytesToRead)
+					
+				}
+				copy(body[copiedBytes:], remainingBodyBuffer[:n])
+			}
+			req.Body = io.NopCloser(bytes.NewReader(body))
+		} else if err != nil {
+			fmt.Println("Invalid Content-Length:", contentLengthStr)
+			
 		}
 	}
 
