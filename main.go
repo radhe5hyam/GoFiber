@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"log"
 	"net"
 	"net/http"
 	"net/url"
@@ -25,7 +26,7 @@ func newConnResponseWriter(conn net.Conn) *connResponseWriter {
 	return &connResponseWriter{
 		conn:       conn,
 		header:     make(http.Header),
-		statusCode: http.StatusOK, // Default status code
+		statusCode: http.StatusOK,
 	}
 }
 
@@ -49,7 +50,6 @@ func (crw *connResponseWriter) WriteHeader(statusCode int) {
 	statusLine := fmt.Sprintf("HTTP/1.1 %d %s\r\n", crw.statusCode, http.StatusText(crw.statusCode))
 	crw.conn.Write([]byte(statusLine))
 
-	// default Content-Type if not already provided by the handler
 	if crw.header.Get("Content-Type") == "" {
 		crw.header.Set("Content-Type", "text/plain; charset=utf-8")
 	}
@@ -60,13 +60,24 @@ func (crw *connResponseWriter) WriteHeader(statusCode int) {
 			crw.conn.Write([]byte(headerLine))
 		}
 	}
-	crw.conn.Write([]byte("\r\n")) // End of headers
+	crw.conn.Write([]byte("\r\n"))
 	crw.headersWritten = true
+}
+
+// LoggerMiddleware is a simple example of a middleware.
+func LoggerMiddleware(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+		log.Printf("--> %s %s", r.Method, r.URL.Path)
+		next(w, r) // Call the next handler in the chain
+		log.Printf("<-- %s %s %v", r.Method, r.URL.Path, time.Since(start))
+	}
 }
 
 func main() {
 	router := NewRouter()
-	// example routes
+	// Register global middleware
+	router.Use(LoggerMiddleware)
 	SetupExampleRoutes(router)
 
 	listener, err := net.Listen("tcp", ":8080")
@@ -94,10 +105,8 @@ func handleRequest(conn net.Conn, router *Router) {
 
 	var fullData []byte
 	buffer := make([]byte, 2048)
-	// Set a read deadline to prevent connections from hanging
 	conn.SetReadDeadline(time.Now().Add(5 * time.Second))
 
-	
 	for {
 		n, err := conn.Read(buffer)
 		if err != nil {
@@ -116,7 +125,6 @@ func handleRequest(conn net.Conn, router *Router) {
 		if bytes.Contains(fullData, []byte("\r\n\r\n")) {
 			break
 		}
-		// Safety break if headers are excessively large
 		if len(fullData) > 8192 { // 8KB limit for headers
 			fmt.Println("Request headers too large")
 			conn.Write([]byte("HTTP/1.1 413 Payload Too Large\r\nContent-Length: 22\r\n\r\n413 Payload Too Large"))
@@ -129,7 +137,6 @@ func handleRequest(conn net.Conn, router *Router) {
 		return
 	}
 
-
 	headerEndIndex := bytes.Index(fullData, []byte("\r\n\r\n"))
 	if headerEndIndex == -1 {
 		fmt.Println("Invalid HTTP request: Missing \\r\\n\\r\\n")
@@ -138,7 +145,6 @@ func handleRequest(conn net.Conn, router *Router) {
 	}
 
 	requestHeaderBytes := fullData[:headerEndIndex]
-	// Potentially part of the body is already in fullData after the headers
 	requestBodyBytesSoFar := fullData[headerEndIndex+4:]
 
 	headerLines := bytes.Split(requestHeaderBytes, []byte("\r\n"))
@@ -159,7 +165,6 @@ func handleRequest(conn net.Conn, router *Router) {
 	rawPath := string(bytes.TrimSpace(requestLineParts[1]))
 	protocol := string(bytes.TrimSpace(requestLineParts[2]))
 
-	// Parse the raw path to separate path from query string
 	parsedURL, err := url.Parse(rawPath)
 	if err != nil {
 		fmt.Println("Invalid request path (cannot parse URL):", rawPath)
@@ -178,9 +183,8 @@ func handleRequest(conn net.Conn, router *Router) {
 		Proto:      protocol,
 		Header:     make(http.Header),
 		RequestURI: rawPath,
-		Body:       http.NoBody, // Default to no body
+		Body:       http.NoBody,
 	}
-
 
 	for _, line := range headerLines[1:] {
 		if len(line) == 0 {
@@ -197,7 +201,6 @@ func handleRequest(conn net.Conn, router *Router) {
 		}
 	}
 
-	// --- Request Body Parsing ---
 	contentLengthStr := req.Header.Get("Content-Length")
 	if contentLengthStr != "" {
 		contentLength, err := strconv.ParseInt(contentLengthStr, 10, 64)
@@ -213,14 +216,12 @@ func handleRequest(conn net.Conn, router *Router) {
 				n, readErr := io.ReadFull(conn, remainingBodyBuffer)
 				if readErr != nil && readErr != io.EOF && readErr != io.ErrUnexpectedEOF {
 					fmt.Println("Error reading remaining request body:", readErr, "read", n, "expected", bytesToRead)
-					
 				}
 				copy(body[copiedBytes:], remainingBodyBuffer[:n])
 			}
 			req.Body = io.NopCloser(bytes.NewReader(body))
 		} else if err != nil {
 			fmt.Println("Invalid Content-Length:", contentLengthStr)
-			
 		}
 	}
 

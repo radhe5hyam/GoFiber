@@ -18,13 +18,18 @@ func NewNode() *Node {
 	}
 }
 
+// MiddlewareFunc defines the signature for middleware functions.
+type MiddlewareFunc func(http.HandlerFunc) http.HandlerFunc
+
 type Router struct{
-	Root *Node
+	Root       *Node
+	Middleware []MiddlewareFunc // Slice to store global middleware
 }
 
 func NewRouter() *Router {
     return &Router{
-        Root: NewNode(),
+        Root:       NewNode(),
+        Middleware: make([]MiddlewareFunc, 0),
     }
 }
 
@@ -40,39 +45,54 @@ func (r *Router) AddRoute(method, routePath string, handler http.HandlerFunc) {
 		current = current.Children[part]
 	}
 
-	
 	current.Handlers[method] = handler
+}
+
+// Use adds a new global middleware to the router.
+func (r *Router) Use(middleware MiddlewareFunc) {
+	r.Middleware = append(r.Middleware, middleware)
 }
 
 func (r *Router) ServeHTTP(res http.ResponseWriter, req *http.Request) {
 	cleanedPath := path.Clean(req.URL.Path)
     segments := splitPath(cleanedPath)
     current := r.Root
+	var targetHandler http.HandlerFunc
 
     for _, segment := range segments {
         if nextNode, ok := current.Children[segment]; ok {
             current = nextNode
         } else {
-			// Path segment not found
-            http.NotFound(res, req)
+			targetHandler = http.NotFound
+			// Apply middleware even for NotFound
+			for i := len(r.Middleware) - 1; i >= 0; i-- {
+				targetHandler = r.Middleware[i](targetHandler)
+			}
+			targetHandler(res, req)
             return
         }
     }
 
-	// Path found, now check if a handler exists for the request method
     if handler, ok := current.Handlers[req.Method]; ok {
-        handler(res, req) 
+		targetHandler = handler
     } else if len(current.Handlers) > 0 {
-		allowedMethods := make([]string, 0, len(current.Handlers))
+		var allowedMethods []string
 		for m := range current.Handlers {
 			allowedMethods = append(allowedMethods, m)
 		}
 		res.Header().Set("Allow", strings.Join(allowedMethods, ", "))
-		http.Error(res, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
+		targetHandler = func(w http.ResponseWriter, r *http.Request) {
+			http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
+		}
     } else {
-		// Path is valid, but no handlers are registered for any method on this node
-        http.NotFound(res, req)
+		targetHandler = http.NotFound
     }
+
+	// Apply all global middleware
+	for i := len(r.Middleware) - 1; i >= 0; i-- {
+		targetHandler = r.Middleware[i](targetHandler)
+	}
+	targetHandler(res, req)
 }
 
 func splitPath(path string) []string {

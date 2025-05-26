@@ -19,7 +19,7 @@ func SetupExampleRoutes(router *Router) {
 
 	router.AddRoute(http.MethodGet, "/user/info", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprint(w, `{"name": "Gemini Router", "type": "Trie"}`) // Corrected name
+		fmt.Fprint(w, `{"name": "Gemini Router", "type": "Trie"}`)
 	})
 
 	router.AddRoute(http.MethodPost, "/submit", func(w http.ResponseWriter, r *http.Request) {
@@ -30,7 +30,6 @@ func SetupExampleRoutes(router *Router) {
 		}
 		defer r.Body.Close()
 
-		// Echo the body back or process it
 		w.Header().Set("Content-Type", "text/plain")
 		w.WriteHeader(http.StatusCreated)
 		fmt.Fprintf(w, "Received your submission:\n%s", string(bodyBytes))
